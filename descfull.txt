@@ -1,0 +1,205 @@
+===============================================================================
+                       PINGLESPIN (pingleTEK ©2025-inf)
+                    COMPLETE GAME TECHNICAL SPECIFICATION
+===============================================================================
+
+This document provides a full, exhaustive, and unambiguous specification of the
+"pinglespin" Android application created by pingleTEK. Any developer or AI model
+can read this file to recreate or understand the entire codebase, UI flow,
+state management, persistence model, physics engine, and secret developer options
+with zero discrepancies.
+
+-------------------------------------------------------------------------------
+1. GENERAL OVERVIEW & IDENTIFIERS
+-------------------------------------------------------------------------------
+- App Title: pinglespin
+- Developer Signature: pingleTEK ©2025-inf
+- Package Name / Namespace: com.example
+- Default Application ID: com.aistudio.pinglespin.yruwq
+- Target Platform: Android (Min SDK 24+, Target SDK 34)
+- Core Tech Stack: Kotlin, Jetpack Compose, Material Design 3, Room Database,
+  Kotlin Coroutines & Flow, OkHttp3, Android MediaPlayer, Vibrator/VibratorManager.
+- Design Aesthetic: Modern dark theme with high-contrast neon accents, sleek
+  translucent card surfaces (Color.White.copy(alpha = 0.03f - 0.08f)), custom
+  sans-serif typography, and animated transitions.
+
+-------------------------------------------------------------------------------
+2. DATA PERSISTENCE & STORAGE
+-------------------------------------------------------------------------------
+A. Room Local Database:
+   - Database Name: "pingle_database" (version 3)
+   - Entity: ScoreEntity (table "pingle_scores")
+     * id: Int (PrimaryKey, autoGenerate = true)
+     * durationMs: Long (spin duration in milliseconds)
+     * timestamp: Long (System.currentTimeMillis())
+     * isManual: Boolean (default false)
+     * isDebug: Boolean (default false - marks scores created via Custom High Score Maker)
+   - ScoreDao:
+     * getTopScores(): Flow<List<ScoreEntity>> (returns TOP 10 ordered by durationMs DESC)
+     * insertScore(score: ScoreEntity): Inserts or replaces score
+     * clearAllScores(): Deletes all entries from "pingle_scores"
+
+B. SharedPreferences:
+   1. "pingle_prefs":
+      - "pingle_speed" (Float, default 1.0f, range 0.5f - 10.0f)
+      - "pingle_friction" (Float, default 15.0f, range 0.0f - 100.0f)
+      - "manual_unlocked" (Boolean, default true)
+      - "total_spin_duration" (Long, default 0L)
+      - "pingle_tint" (String, default "none")
+      - "pingle_custom_color" (Int, ARGB, default 0xFF00FFCC)
+      - "pingle_fold_angle_threshold" (Float, default 120.0f)
+      - "pingle_custom_image_uri" (String, path to custom image/video file)
+      - "use_custom_image" (Boolean, default false)
+      - "custom_media_type" (String, "image" | "video" | "unrecognized")
+      - "load_everything" (Boolean, default false)
+      - "device_permanently_killed" (Boolean, default false)
+      - "dbon_found" (Boolean, default false)
+      - "x86_found" (Boolean, default false)
+      - "debug_unlocked" (Boolean, default false)
+      - "button_vibration_mode" (String, "none" | "light" | "medium" | "strong", default "medium")
+      - "spin_vibration_mode" (String, "none" | "light" | "medium" | "strong", default "light")
+      - "spin_vibration_interval" (Float, default 15.0f seconds)
+      - "is_chinese_crashed" (Boolean, default false)
+      - Component Layout Offsets/Scales/Tilts per configuration preset (normal, psm,
+        unfolded_normal, folded_normal, unfolded_psm, folded_psm):
+        * {config}_pingle_scale, {config}_pingle_offset_x, {config}_pingle_offset_y, {config}_pingle_tilt
+        * {config}_timer_scale, {config}_timer_offset_x, {config}_timer_offset_y, {config}_timer_tilt
+        * {config}_spotify_scale, {config}_spotify_offset_x, {config}_spotify_offset_y, {config}_spotify_tilt
+        * {config}_disc_scale, {config}_disc_offset_x, {config}_disc_offset_y, {config}_disc_tilt
+
+   2. "spotify_prefs":
+      - "client_id" (String)
+      - "client_secret" (String)
+      - "username" (String)
+      - "password" (String)
+      - "is_simulated" (Boolean)
+      - "access_token" (String)
+      - "refresh_token" (String)
+      - "expires_at" (Long)
+
+-------------------------------------------------------------------------------
+3. NAVIGATION & SCREEN ARCHITECTURE
+-------------------------------------------------------------------------------
+The application uses a central StateFlow `currentScreen` in `PingleViewModel` with
+the `Screen` enum values:
+1. HOME: Main dashboard menu.
+2. PLAY: Active 3D spinning Pringle physics screen.
+3. HIGH_SCORES: Leaderboard screen displaying top local scores.
+4. OPTIONS: Multi-tab settings and developer options screen.
+5. MANUAL: User manual and gameplay guide.
+6. PINGUI_SETUP: Component layout configuration picker.
+7. PINGUI_GAME_EDIT: Interactive drag, scale, and tilt screen element positioning editor.
+
+-------------------------------------------------------------------------------
+4. SCREEN DETAILS & FEATURES
+-------------------------------------------------------------------------------
+
+A. HOME SCREEN (Screen.HOME):
+   - Header with glowing animated "pinglespin" logo and "by pingleTEK" subtitle.
+   - Interactive spinning Pringle preview chip in the hero banner.
+   - Main menu buttons:
+     * START SPINNING -> Navigates to PLAY screen.
+     * HIGH SCORES -> Navigates to HIGH_SCORES screen.
+     * OPTIONS -> Navigates to OPTIONS screen.
+     * MANUAL -> Navigates to MANUAL screen.
+     * PINGUI LAYOUT SETUP -> Navigates to PINGUI_SETUP screen.
+
+B. PLAY SCREEN (Screen.PLAY):
+   - Core Physics Engine:
+     * 3D-styled Pringle chip rendered with rotation graphics layer.
+     * Gesture handling via `pointerInput` and drag gestures to calculate touch velocity.
+     * Rotational acceleration added on fling/drag, smoothly decelerated by `pingleFriction`.
+     * Velocity multiplier scaled by `pingleSpeed` (0.5x to 10.0x).
+     * Timer display tracking elapsed spin duration in `HH:MM:SS.mmm`.
+     * Automatic score save to Room DB when spin stops (duration >= 100ms).
+     * Total lifetime spin duration accumulator.
+     * Dynamic Haptics: Triggers haptic pulse every `spinVibrationInterval` degrees of rotation based on `spinVibrationMode`.
+   - Overlays & Visual Effects:
+     * Pringle Tinting: None, Gold, Green, Blue, Red, Purple, or Custom ARGB Color.
+     * Custom Media Overlay: Displays user-selected image or video texture on the chip.
+     * Easter Eggs active during play:
+       - Rainbow Neon: Infinite animated rainbow color cycle filter.
+       - Matrix Background: Animated falling green digital rain particles.
+       - Reverse Spin: Inverts spin direction calculations.
+       - Space Stars: Animated starry cosmos particle background.
+       - Invisible Pingle: Renders the chip invisible while keeping physics active.
+     * Integrated Spotify Floating Widget: Play/Pause, track artwork, title, artist, and preview audio stream playback.
+     * Foldable Sensor: Supports hinge angle thresholds (`pingleFoldAngleThreshold`) to automatically pause or alter layout when folded.
+
+C. HIGH SCORES SCREEN (Screen.HIGH_SCORES):
+   - Leaderboard listing the Top 10 longest spins retrieved from Room DB.
+   - Displays rank, formatted spin duration (`HH:MM:SS`), date timestamp, and status.
+   - Special Badges:
+     * Red "DB" Watermark Badge displayed next to custom scores created via Developer Commands.
+   - Lifetime Statistics Card: Displays total cumulative spin duration across all sessions.
+   - "CLEAR ALL SCORES" action button with confirmation dialog.
+
+D. OPTIONS SCREEN (Screen.OPTIONS):
+   - Horizontal tabbed pager structure with 5 potential tabs:
+     1. "customisation":
+        - Pingle Speed Slider (0.5x - 10.0x).
+        - Pingle Friction Slider (0 - 100).
+        - Pingle Appearance & Tint selector (None, Gold, Green, Blue, Red, Purple, Custom Color Wheel / RGB sliders).
+        - Custom Media Loader (Pick PNG/JPG/GIF or MP4 video for the chip).
+        - Launch Pingui Layout Setup button.
+     2. "special":
+        - "Load Everything" Toggle: Preloads bitmap assets into RAM (requires device RAM >= 6GB check).
+        - Button Vibration Mode Selector (None, Light, Medium, Strong).
+        - Spin Vibration Mode Selector (None, Light, Medium, Strong).
+        - Spin Vibration Interval Slider (5.0s - 90.0s).
+        - Spotify Integration Settings & Simulator login.
+     3. "easter eggs" (Tab visible only if `dbon` key signature is present in `key.txt`):
+        - Rainbow Neon Mode toggle.
+        - Matrix Background toggle.
+        - Reverse Spin toggle.
+        - Space Stars effect toggle.
+     4. "request features":
+        - Built-in feature request & feedback portal.
+     5. "debug" (Always visible on the last tab):
+        - "connect to devcom" Button:
+          * Requests Storage / All Files Access permissions dynamically (`MANAGE_EXTERNAL_STORAGE` / `READ_EXTERNAL_STORAGE`).
+          * Checks for devcom package `com.aistudio.psdevcom.pndvcm` (and legacy packages `psdevcom`, `com.psdevcom`, `com.example.psdevcom`).
+          * Deep-scans device storage for `key.txt` in `psdevcom` directory or recursively across directories up to 5 levels deep.
+          * Reads `key.txt` contents for signatures:
+            - "killsave": Permanently locks the app (`device_permanently_killed = true`).
+            - "dbon": Unlocks `dbonFoundState`, Developer Commands section, and `easter eggs` tab.
+            - "x86av5648ee=-1": Writes success token `XS3567sdSUCESS` back into `key.txt` and unlocks debug mode.
+        - "resync key.txt" Button: Re-reads `key.txt` to update devcom status.
+        - DEVELOPER COMMANDS Section (Visible if `dbon` signature is verified):
+          * KILL DEVICE: Permanently brick/lock app state.
+          * UNLOCK ALL EASTER EGGS: Force-enable all easter egg modes.
+          * CUSTOM HIGH SCORE MAKER (WITH DB WATERMARK): Dialog allowing developers to enter custom hours/minutes/seconds to generate custom scores stored with the `isDebug = true` flag (rendering the red "DB" badge on the leaderboard).
+
+E. MANUAL SCREEN (Screen.MANUAL):
+   - Comprehensive interactive user manual detailing spin physics, fold sensor usage, customization, layout controls, and secrets.
+
+F. PINGUI SETUP & GAME EDIT SCREENS (Screen.PINGUI_SETUP & Screen.PINGUI_GAME_EDIT):
+   - Allows users to customize the exact X/Y offsets, scale factors, and tilt angles for 4 core screen elements:
+     1. Pingle Chip
+     2. Spin Timer
+     3. Spotify Widget
+     4. Background Disc
+   - Supports 6 distinct layout configuration presets:
+     * Normal
+     * Power Saving Mode (PSM)
+     * Unfolded Normal
+     * Folded Normal
+     * Unfolded PSM
+     * Folded PSM
+   - Real-time drag, pinch-to-scale, and rotate-to-tilt gestures with reset and save buttons.
+
+-------------------------------------------------------------------------------
+5. SPECIAL MECHANICS & EASTER EGGS
+-------------------------------------------------------------------------------
+1. Chinese Text Crash Easter Egg (`isChineseCrashed`):
+   - Triggered via developer action or crash flag.
+   - Handled inside `PingleText` composable: Transforms every non-whitespace character in the UI into a randomized CJK Unicode character (`0x4E00..0x9FFF`).
+2. Spotify Integration & Simulator (`SpotifyManager.kt`):
+   - Connects to real Spotify API via OAuth authorization code flow.
+   - Includes built-in simulated playlist mode with 5 streaming preview tracks ("Pingle Spin", "Retro Electro Spin", "Golden Pringles Echoes", "Hyperdrive Rotation", "Midnight Spin Ambient") using Android `MediaPlayer`.
+3. Custom Haptics (`VibrationHelper.kt`):
+   - Utilizes `Vibrator` / `VibratorManager` to provide precise haptic waveforms for Light (12ms @ 70 amplitude), Medium (20ms @ 140 amplitude), and Strong (40ms @ 255 amplitude).
+
+===============================================================================
+                          END OF SPECIFICATION FILE
+===============================================================================
